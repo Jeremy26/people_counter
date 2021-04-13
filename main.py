@@ -144,6 +144,7 @@ def infer_on_stream(args, client):
     total_count = 0
     duration = 0
     request_id = 0
+    stop_time = time.time()
 
     while cap.isOpened():
         log_data = {}
@@ -164,7 +165,7 @@ def infer_on_stream(args, client):
         # Start asynchronous inference
         t0 = time.time()
         plugin.exec_net(p_frame, request_id)
-
+        missed_duration = 1000
         # Wait for the results
         if plugin.wait() == 0:
 
@@ -179,18 +180,23 @@ def infer_on_stream(args, client):
                                .format(inference_t)
             cv2.putText(displayFrame, inference_t_message, (15, 15),
                        cv2.FONT_HERSHEY_COMPLEX, 0.45, (200, 10, 10), 1)
-
+            
+            if cur_count == prev_count:
+                missed_duration = time.time() - stop_time
+            
             if cur_count > prev_count:
                 start_time = time.time()
-                total_count = total_count + cur_count - prev_count
+                if missed_duration > 3:
+                    total_count += cur_count - prev_count
                 client.publish("person", json.dumps({"total": total_count}))
 
             if cur_count < prev_count:
-                duration = int(time.time() - start_time)
+                stop_time = time.time()
+                duration = stop_time - start_time
+                missed_duration = 0
                 # Publish messages to the MQTT server
-                client.publish("person/duration",
-                               json.dumps({"duration": duration}))
-                
+                client.publish("person/duration",json.dumps({"duration": duration}))
+            
             # Calculate and send relevant information on #
             # current_count, total_count and duration to the MQTT server #
             # Topic "person": keys of "count" and "total" #
